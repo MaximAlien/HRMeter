@@ -37,6 +37,8 @@ struct hrflags {
 }
 
 - (void)centralManagerDidUpdateState:(CBCentralManager *)central {
+    NSLog(@"%s", __FUNCTION__);
+    
     NSString *stateString;
     switch (self.centralManager.state) {
         case CBManagerStateResetting:
@@ -65,6 +67,8 @@ struct hrflags {
 }
 
 - (void)scanForPeripheral {
+    NSLog(@"%s", __FUNCTION__);
+    
     CBUUID *heartRate = [CBUUID UUIDWithString:HEART_RATE_SERVICE];
     NSDictionary *scanOptions = [NSDictionary dictionaryWithObject:[NSNumber numberWithBool:YES]
                                                             forKey:CBCentralManagerScanOptionAllowDuplicatesKey];
@@ -75,6 +79,8 @@ struct hrflags {
  didDiscoverPeripheral:(CBPeripheral *)peripheral
      advertisementData:(NSDictionary<NSString *, id> *)advertisementData
                   RSSI:(NSNumber *)RSSI {
+    NSLog(@"%s. Peripheral: %@. Advertisement data: %@", __FUNCTION__, peripheral, advertisementData);
+    
     NSString *name = advertisementData[CBAdvertisementDataLocalNameKey];
     if (name) {
         NSLog(@"Found heart rate monitor: %@.", name);
@@ -85,12 +91,12 @@ struct hrflags {
         self.peripheral = peripheral;
         self.peripheral.delegate = self;
         [central connectPeripheral:self.peripheral options:nil];
-    } else {
-        NSLog(@"%@", advertisementData[CBAdvertisementDataLocalNameKey]);
     }
 }
 
 - (void)centralManager:(CBCentralManager *)central didConnectPeripheral:(CBPeripheral *)peripheral {
+    NSLog(@"%s", __FUNCTION__);
+    
     [peripheral setDelegate:self];
     [peripheral discoverServices:nil];
     
@@ -100,58 +106,63 @@ struct hrflags {
 - (void)centralManager:(CBCentralManager *)central didFailToConnectPeripheral:(CBPeripheral *)peripheral error:(nullable NSError *)error {
     if (error) {
         NSLog(@"%s. Error: %@", __FUNCTION__, error);
+        return;
     }
 }
 
 - (void)centralManager:(CBCentralManager *)central didDisconnectPeripheral:(CBPeripheral *)peripheral error:(nullable NSError *)error {
     if (error) {
         NSLog(@"%s. Error: %@", __FUNCTION__, error);
+        return;
     }
 }
 
 - (void)peripheral:(CBPeripheral *)peripheral didDiscoverServices:(NSError *)error {
-    if (!error) {
-        for (CBService *service in peripheral.services) {
-            if ([service.UUID isEqual:[CBUUID UUIDWithString:HEART_RATE_SERVICE]]) {
-                [peripheral discoverCharacteristics:nil forService:service];
-            }
-        }
-    } else {
+    if (error) {
         NSLog(@"%s. Error: %@", __FUNCTION__, error);
+        return;
+    }
+    
+    for (CBService *service in peripheral.services) {
+        if ([service.UUID isEqual:[CBUUID UUIDWithString:HEART_RATE_SERVICE]]) {
+            [peripheral discoverCharacteristics:nil forService:service];
+        }
     }
 }
 
 - (void)peripheral:(CBPeripheral *)peripheral didDiscoverCharacteristicsForService:(CBService *)service error:(NSError *)error {
-    if (!error) {
-        if ([service.UUID isEqual:[CBUUID UUIDWithString:HEART_RATE_SERVICE]]) {
-            for (CBCharacteristic *characteristic in service.characteristics) {
-                if ([characteristic.UUID isEqual:[CBUUID UUIDWithString:HEART_RATE_MEASUREMENT]]) {
-                    [peripheral setNotifyValue:YES forCharacteristic:characteristic];
-                }
+    if (error) {
+        NSLog(@"%s. Error: %@", __FUNCTION__, error);
+        return;
+    }
+    
+    if ([service.UUID isEqual:[CBUUID UUIDWithString:HEART_RATE_SERVICE]]) {
+        for (CBCharacteristic *characteristic in service.characteristics) {
+            if ([characteristic.UUID isEqual:[CBUUID UUIDWithString:HEART_RATE_MEASUREMENT]]) {
+                [peripheral setNotifyValue:YES forCharacteristic:characteristic];
             }
         }
-    } else {
-        NSLog(@"%s. Error: %@", __FUNCTION__, error);
     }
 }
 
-- (void)peripheral:(CBPeripheral *)aPeripheral didUpdateValueForCharacteristic:(CBCharacteristic *)characteristic error:(NSError *)error {
-    if (!error) {
-        if ([characteristic.UUID isEqual:[CBUUID UUIDWithString:HEART_RATE_MEASUREMENT]]) {
-            const void *bytes = [characteristic.value bytes];
-            const uint8_t *data = (uint8_t *)bytes;
-            struct hrflags flags;
-            memcpy(&flags, data, sizeof(flags));
-            
-            int hrValue = 0;
-            int offset = sizeof(flags);
-            memcpy(&hrValue, data + offset, flags._hr_format_bit + 1);
-            offset += flags._hr_format_bit + 1;
-            
-            NSLog(@"Heart rate: %d", hrValue);
-        }
-    } else {
+- (void)peripheral:(CBPeripheral *)peripheral didUpdateValueForCharacteristic:(CBCharacteristic *)characteristic error:(NSError *)error {
+    if (error) {
         NSLog(@"%s. Error: %@", __FUNCTION__, error);
+        return;
+    }
+    
+    if ([characteristic.UUID isEqual:[CBUUID UUIDWithString:HEART_RATE_MEASUREMENT]]) {
+        const void *bytes = [characteristic.value bytes];
+        const uint8_t *data = (uint8_t *)bytes;
+        struct hrflags flags;
+        memcpy(&flags, data, sizeof(flags));
+        
+        int hrValue = 0;
+        int offset = sizeof(flags);
+        memcpy(&hrValue, data + offset, flags._hr_format_bit + 1);
+        offset += flags._hr_format_bit + 1;
+        
+        NSLog(@"Heart rate: %d", hrValue);
     }
 }
 
